@@ -9,21 +9,251 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r import}
+# Introduction
 
+This analysis is to see if a countries wealth affected the survival rate of its people. There are many proxies for a countries' wealth this study will compare the survival rating to a countries' "Gross Domestic Product", "Gross Domestic Product per Capita", and an informal Price Point Parity, the "Big Mac Index".
+
+The analysis fortunately shows that these three countries' wealth proxies play a minimal role on there people's chances of surviving COVID. 
+
+
+
+```{r setup2, message=FALSE }
+library(tidyverse)
+```
+
+```{r helper functions}
 
 
 ```
 
-```{r tidy}
+```{r import_covid}
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+file_names <- c(
+  "time_series_covid19_confirmed_US.csv",
+  "time_series_covid19_confirmed_global.csv",
+  "time_series_covid19_deaths_US.csv",
+  "time_series_covid19_deaths_global.csv"
+)
+
+url <- str_c(url_in, file_names)
+
+confirmed_us <- read.csv(url[1])
+confirmed_global <- read.csv(url[2])
+deaths_us <- read.csv(url[3])
+deaths_global <- read.csv(url[4])
+
+```
+```{r import_economic}
+# https://www.kaggle.com/datasets/alejopaullier/-gdp-by-country-1999-2022
+# https://www.kaggle.com/datasets/vittoriogiatti/bigmacprice?resource=download
+
+world_gdp <- read.csv("data/gdp.csv")
+big_mac_price <- read.csv("data/BigmacPrice.csv")
+
+```
+```{r import_population}
+# https://www.kaggle.com/datasets/tanuprabhu/population-by-country-2020
+
+population<- read.csv("data/population_by_country_2020.csv")
 
 ```
 
+```{r tidy_covid}
+# Global data
+confirmed_global_tidy <- confirmed_global |> 
+  select(!c(Province.State ,Lat, Long)) |> 
+  pivot_longer(cols = !c(Country.Region),
+               names_to = "date",
+               values_to = "cases") |> 
+  mutate(year = year(mdy(substr(date, 2, nchar(date))))) |> 
+  group_by(Country.Region, year) |> 
+  summarise(cases = sum(cases))
+
+deaths_global_tidy <- deaths_global |> 
+  select(!c(Province.State ,Lat, Long)) |> 
+  pivot_longer(cols = !c(Country.Region),
+               names_to = "date",
+               values_to = "deaths") |> 
+  mutate(year = year(mdy(substr(date, 2, nchar(date))))) |> 
+  group_by(Country.Region, year) |> 
+  summarise(deaths = sum(deaths))
+
+#join table next
+
+join_global <- confirmed_global_tidy |> 
+  full_join(deaths_global_tidy, by=c("Country.Region", "year")) |> 
+  mutate(Country.Region = if_else(Country.Region == "Taiwan*", "Taiwan", Country.Region),
+         Country.Region = if_else(Country.Region == "Czechia", "Czech Republic", Country.Region),
+         Country.Region = if_else(Country.Region == "Korea, South", "South Korea", Country.Region))
+               
+# I thought I need this but did not
+# US data 
+# confirmed_us_tidy <- confirmed_us |> 
+#   select(!c(UID, iso3:Combined_Key)) |> 
+#   pivot_longer(cols = !c(iso2),
+#                names_to = "date",
+#                values_to = "cases") |> 
+#   mutate(year = year(mdy(substr(date, 2, nchar(date))))) |> 
+#   group_by(year) |> 
+#   summarise(cases = sum(cases))
+# 
+# deaths_us_tidy <- deaths_us |> 
+#   select(!c(UID, iso3:Combined_Key)) |>
+#   pivot_longer(cols = !c(iso2, Population),
+#                 names_to = "date",
+#                 values_to = "deaths") |> 
+#   mutate(year = year(mdy(substr(date, 2, nchar(date))))) |> 
+#   group_by(year) |> 
+#   summarise(deaths = sum(deaths), population = sum(Population))
+# 
+# joined_us <- confirmed_us_tidy |> 
+#   left_join(deaths_us_tidy, by="year")
+#   
+
+```
+```{r tidy_economic}
+world_gdp_tidy <- world_gdp |>
+  select(Country, X2019:X2022) |> 
+  mutate(across(X2019:X2022, parse_number)) |> 
+  pivot_longer(cols = !c(Country),
+               names_to = "year",
+               values_to = "gdp") |>
+  mutate(year = year(make_date(substr(year, 2, nchar(year))))) |>
+  #lag gdp
+  arrange(Country, year) |> 
+  group_by(Country) |> 
+  mutate(previous_gdp = lag(gdp)) |> 
+  ungroup() |> 
+  filter(year >= 2020 & year <= 2023) |> 
+  mutate(Country = if_else(Country == "Taiwan Province of China", "Taiwan", Country),
+         Country = if_else(Country == "United States", "US", Country),
+         Country = if_else(Country == "Korea", "South Korea", Country),
+         Country = if_else(Country == "Slovak Republic", "Slovakia", Country)
+         ) 
+  
+  
+big_mac_price_tidy <- big_mac_price |> 
+  select(date, name, dollar_price) |> 
+  mutate(date = ymd(date)) |> 
+  rename(big_mac_usd = dollar_price) |> 
+  group_by(year = year(date), name) |> 
+  summarize(average_big_mac_usd= mean(big_mac_usd))|>
+  #lag price one year
+  arrange(name, year) |> 
+  group_by(name) |> 
+  mutate(previous_big_mac_usd= lag(average_big_mac_usd)) |>
+  ungroup() |> 
+  filter(year >= 2020 & year <= 2023) |> 
+  filter(!name %in% c("Hong Kong", "Euro area")) |> 
+  mutate(name = if_else(name == "United States", "US", name),
+         name = if_else(name == "Britain", "United Kingdom", name))
+  
+
+```
+```{r tidy_population}
+
+population_tidy <- population |> 
+  select(Country..or.dependency., Population..2020.) |> 
+  rename(country = Country..or.dependency., population = Population..2020.) |> 
+  mutate(
+    country = case_when(
+      country == "United States" ~ "US",
+      country == "Czech Republic (Czechia)" ~ "Czech Republic",
+      TRUE ~ country
+    )
+  )
+
+
+```
+
+```{r big_join}
+global_covid_economic <- big_mac_price_tidy |> 
+  left_join(world_gdp_tidy, join_by(name == Country, year)) |> 
+  left_join(join_global, join_by(name == Country.Region, year)) |>
+  left_join(population_tidy, join_by(name == country)) |> 
+  rename(country = name)
+  
+```
 ```{r transform}
+global_covid_economic_transform <- global_covid_economic |> 
+  mutate(death_rate = deaths/cases,
+         survival_rate = 1 - death_rate,
+         survival_scaled_mean = survival_rate - mean(survival_rate),
+         survival_zscore = (survival_rate - mean(survival_rate)) / sd(survival_rate),
+         gdp_per_cap = (gdp * 1000000000)/ population
+         )
+
+global_covid_economic_transform_wo_outliers <- global_covid_economic_transform |> 
+  filter(survival_rate > .96)
+
+big_mac_mod <- lm(survival_rate ~ average_big_mac_usd, data=global_covid_economic_transform)
+gdp_mod <- lm(survival_rate ~ gdp, data=global_covid_economic_transform)
+gdp_per_cap_mod <- lm(survival_rate ~ gdp_per_cap, data= global_covid_economic_transform)
+
+gdp_per_cap_wo_mod <- lm(survival_rate ~ gdp_per_cap, data= global_covid_economic_transform_wo_outliers)
+
+summary(big_mac_mod)$r.squared
+summary(gdp_mod)$r.squared
+summary(gdp_per_cap_mod)$r.squared
+
+global_covid_economic_transform <-  global_covid_economic_transform |> 
+  mutate(
+    big_mac_pred = predict(big_mac_mod),
+    gdp_pred = predict(gdp_mod),
+    gdp_per_cap_pred = predict(gdp_per_cap_mod)
+  )
+
+
 
 ```
 
 ```{r visualize}
+global_covid_economic_transform |> 
+  ggplot() +
+  geom_point(aes(x = gdp, y = survival_rate * 100), color="purple4") +
+  geom_point(aes(x = gdp, y = gdp_pred * 100), color="green", shape = 6) +
+  xlim(0, 2500) +
+  labs(
+    x = "Gross Domestic Product (Billons of US Dollars)",
+    y = "Survival Rate (Percent)",
+    title = "Economy Plays Minimal Role in COVID Survival Based on Countries GDP",
+    subtitle = "R² = 0.006",
+    caption = "Data from kaggle.com/datasets/alejopaullier/-gdp-by-country-1999-2022 \n Zoomed to Show Details"
+  )
+
+global_covid_economic_transform |> 
+  ggplot() +
+  geom_point(aes(x = gdp_per_cap, y = survival_rate * 100), color="purple4") +
+  geom_point(aes(x = gdp_per_cap, y = gdp_per_cap_pred * 100), color="green", shape = 6) +
+  labs(
+    x = "Gross Domestic Product per Capita (US Dollars)",
+    y = "Survival Rate (Percent)",
+    title = "Economy Plays Minimal Role in COVID Survival Based on Countries GDP per Capita",
+    subtitle = "R² = 0.056",
+    caption = "Data from: \n kaggle.com/datasets/alejopaullier/-gdp-by-country-1999-2022 \n kaggle.com/datasets/tanuprabhu/population-by-country-2020"
+  )
+
+global_covid_economic_transform |> 
+  ggplot() +
+  geom_point(aes(x = average_big_mac_usd, y = survival_rate * 100, color = "Data") ) +
+  geom_point(aes(x = average_big_mac_usd, y = big_mac_pred * 100, color = "Model"), shape = 6) +
+  # ylim(95, 100) +
+  scale_color_manual(
+    name = "Legend",
+    values = c("Data" = "purple4", "Model" = "green")
+  )+
+  theme(legend.position = "bottom")+
+  labs(
+    x = "Big Mac Price (US Dollars)",
+    y = "Survival Rate (Percent)",
+    title = "Economy Plays Minimal Role in COVID Survival Based on informal PPP Analysis",
+    subtitle = "R² = 0.014",
+    caption = "Data from kaggle.com/datasets/vittoriogiatti/bigmacprice \n Zoomed to Show Details"
+  )
+
+  
+# + scale_color_colorblind()
 
 ```
 
