@@ -1,8 +1,10 @@
 ---
-title: "covid_data_assignment"
+title: "COVID Data Assignment"
 author: "Stark, Joop"
 date: "2025-11-25"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -11,11 +13,13 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
-This analysis is to see if a countries wealth affected the survival rate of its people. There are many proxies for a countries' wealth this study will compare the survival rating to a countries' "Gross Domestic Product", "Gross Domestic Product per Capita", and an informal Price Point Parity, the "Big Mac Index".
+This analysis is to see if a countries wealth effected the survival rate of its people. There are many proxies for a countries' wealth this study will compare the survival rating to a countries' "Gross Domestic Product", "Gross Domestic Product per Capita", and an informal Price Point Parity, the "Big Mac Index".
 
 The analysis fortunately shows that these three countries' wealth proxies play a minimal role on there people's chances of surviving COVID. 
 
+## Libraries
 
+Tidyverse was used in this analysis, but should have used a library to convert countries into uniform codes. 
 
 ```{r setup2, message=FALSE }
 library(tidyverse)
@@ -25,8 +29,11 @@ library(tidyverse)
 
 
 ```
+# Import Data
 
-```{r import_covid}
+COVID data Johns Hopkins' Center for Systems Science and Engineering.
+
+```{r import_covid, message=FALSE}
 url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/"
 
 file_names <- c(
@@ -44,6 +51,8 @@ deaths_us <- read.csv(url[3])
 deaths_global <- read.csv(url[4])
 
 ```
+The economic and population data was downloaded as a zip from Kaggle, it can be accessed from the links provided or the data directory from the github link. Github: https://github.com/JoopStark/ds_field_covid_assignment
+
 ```{r import_economic}
 # https://www.kaggle.com/datasets/alejopaullier/-gdp-by-country-1999-2022
 # https://www.kaggle.com/datasets/vittoriogiatti/bigmacprice?resource=download
@@ -58,8 +67,13 @@ big_mac_price <- read.csv("data/BigmacPrice.csv")
 population<- read.csv("data/population_by_country_2020.csv")
 
 ```
+# Tidy
 
-```{r tidy_covid}
+### Tidy COVID
+
+The analysis only needed yearly data so cases and deaths were summed for each year. Then deaths and case were joined onto a combined COVID table. This table will be combined with the economic data, so some country names needed to be converted to match other data. 
+
+```{r tidy_covid, message=FALSE}
 # Global data
 confirmed_global_tidy <- confirmed_global |> 
   select(!c(Province.State ,Lat, Long)) |> 
@@ -85,7 +99,10 @@ join_global <- confirmed_global_tidy |>
   full_join(deaths_global_tidy, by=c("Country.Region", "year")) |> 
   mutate(Country.Region = if_else(Country.Region == "Taiwan*", "Taiwan", Country.Region),
          Country.Region = if_else(Country.Region == "Czechia", "Czech Republic", Country.Region),
-         Country.Region = if_else(Country.Region == "Korea, South", "South Korea", Country.Region))
+         Country.Region = if_else(Country.Region == "Korea, South", "South Korea", Country.Region),
+         Country.Region = if_else(Country.Region == "Congo (Brazzaville)", "Congo, Republic of", Country.Region),
+         Country.Region = if_else(Country.Region == "Congo (Kinshasa)", "Congo, Democratic Republic of", Country.Region)
+         )
                
 # I thought I need this but did not
 # US data 
@@ -112,7 +129,10 @@ join_global <- confirmed_global_tidy |>
 #   
 
 ```
-```{r tidy_economic}
+### Tidy Economic
+
+
+```{r tidy_economic, message=FALSE}
 world_gdp_tidy <- world_gdp |>
   select(Country, X2019:X2022) |> 
   mutate(across(X2019:X2022, parse_number)) |> 
@@ -126,11 +146,25 @@ world_gdp_tidy <- world_gdp |>
   mutate(previous_gdp = lag(gdp)) |> 
   ungroup() |> 
   filter(year >= 2020 & year <= 2023) |> 
-  mutate(Country = if_else(Country == "Taiwan Province of China", "Taiwan", Country),
-         Country = if_else(Country == "United States", "US", Country),
-         Country = if_else(Country == "Korea", "South Korea", Country),
-         Country = if_else(Country == "Slovak Republic", "Slovakia", Country)
-         ) 
+  mutate( Country = case_when(
+    Country == "Taiwan Province of China" ~ "Taiwan",
+    Country == "United States" ~ "US",
+    Country == "Korea" ~ "South Korea",
+    Country == "Slovak Republic" ~ "Slovakia",
+    Country == "Afghanistan, Rep. of." ~ "Afghanistan",
+    Country == "Bahamas, The" ~ "Bahamas",
+    Country == "Burma" ~ "Myanmar",
+    Country == "Gambia, The" ~ "Gambia",
+    Country == "Iran, Islamic Republic of" ~ "Iran",
+    Country == "Kyrgyz Republic" ~ "Kyrgyzstan",
+    Country == "Lao People's Democratic Republic" ~ "Laos",
+    Country == "Macedonia" ~ "North Macedonia",
+    Country == "Syrian Arab Republic" ~ "Syrian",
+    Country == "Timor-Leste, Dem. Rep. of" ~ "Timor-Leste",
+    Country == "Yemen, Republic of" ~ "Yemen",
+    Country == "Macedonia, Former Yugoslav Republic of" ~ "North Macedonia",
+    TRUE ~ Country
+  ))
   
   
 big_mac_price_tidy <- big_mac_price |> 
@@ -151,7 +185,9 @@ big_mac_price_tidy <- big_mac_price |>
   
 
 ```
-```{r tidy_population}
+### Tidy Population
+
+```{r tidy_population, message=FALSE}
 
 population_tidy <- population |> 
   select(Country..or.dependency., Population..2020.) |> 
@@ -160,22 +196,31 @@ population_tidy <- population |>
     country = case_when(
       country == "United States" ~ "US",
       country == "Czech Republic (Czechia)" ~ "Czech Republic",
+      country == "Burma" ~ "Myanmar",
+      country == "DR Congo" ~ "Congo, Democratic Republic of",
+      country == "Congo" ~ "Congo, Republic of",
       TRUE ~ country
     )
   )
 
 
 ```
+# Main Table Created
 
-```{r big_join}
+```{r big_join, message=FALSE}
 global_covid_economic <- big_mac_price_tidy |> 
-  left_join(world_gdp_tidy, join_by(name == Country, year)) |> 
-  left_join(join_global, join_by(name == Country.Region, year)) |>
-  left_join(population_tidy, join_by(name == country)) |> 
+  full_join(world_gdp_tidy, join_by(name == Country, year)) |> 
+  full_join(join_global, join_by(name == Country.Region, year)) |>
+  full_join(population_tidy, join_by(name == country)) |> 
   rename(country = name)
   
 ```
-```{r transform}
+# Transformation 
+
+Columns added are `death_rate`, `survival_rate`, `survival_scaled_mean`, `survival_zscore`, and `gdp_per_cap`. The Survival Mean and Z-score where not used. GDP was in billions of dollars so to get the GDP per capita in need to multiply GDP by 1 billion before dividing by the population.
+
+
+```{r transform, message=FALSE}
 global_covid_economic_transform <- global_covid_economic |> 
   mutate(death_rate = deaths/cases,
          survival_rate = 1 - death_rate,
@@ -183,20 +228,39 @@ global_covid_economic_transform <- global_covid_economic |>
          survival_zscore = (survival_rate - mean(survival_rate)) / sd(survival_rate),
          gdp_per_cap = (gdp * 1000000000)/ population
          )
+```
+# Outliers  
+
+There was an interest in investigating the countries that have lower survival rates, but removing them did not effect the r-squared value enough to warrant an investigation.
+
+```{r wo_outliers, message=FALSE}
 
 global_covid_economic_transform_wo_outliers <- global_covid_economic_transform |> 
   filter(survival_rate > .96)
 
-big_mac_mod <- lm(survival_rate ~ average_big_mac_usd, data=global_covid_economic_transform)
-gdp_mod <- lm(survival_rate ~ gdp, data=global_covid_economic_transform)
-gdp_per_cap_mod <- lm(survival_rate ~ gdp_per_cap, data= global_covid_economic_transform)
+```
+# Models  
+
+
+```{r models, message=FALSE}
+
+big_mac_mod <- lm(survival_rate ~ average_big_mac_usd, data=global_covid_economic_transform, na.action = na.exclude)
+gdp_mod <- lm(survival_rate ~ gdp, data=global_covid_economic_transform, na.action = na.exclude)
+gdp_per_cap_mod <- lm(survival_rate ~ gdp_per_cap, data= global_covid_economic_transform, na.action = na.exclude)
 
 gdp_per_cap_wo_mod <- lm(survival_rate ~ gdp_per_cap, data= global_covid_economic_transform_wo_outliers)
+```
+# R² 
 
+The low R² values show that the models do not closely represent the data. 
+
+```{r r_squared, message=FALSE}
 summary(big_mac_mod)$r.squared
 summary(gdp_mod)$r.squared
 summary(gdp_per_cap_mod)$r.squared
+```
 
+```{r models_added_to_table, message=FALSE}
 global_covid_economic_transform <-  global_covid_economic_transform |> 
   mutate(
     big_mac_pred = predict(big_mac_mod),
@@ -204,21 +268,21 @@ global_covid_economic_transform <-  global_covid_economic_transform |>
     gdp_per_cap_pred = predict(gdp_per_cap_mod)
   )
 
-
-
 ```
+# Graphs
 
-```{r visualize}
+```{r visualize, message=FALSE, warning=FALSE}
 global_covid_economic_transform |> 
   ggplot() +
   geom_point(aes(x = gdp, y = survival_rate * 100), color="purple4") +
   geom_point(aes(x = gdp, y = gdp_pred * 100), color="green", shape = 6) +
   xlim(0, 2500) +
+  ylim(90, 100) +
   labs(
     x = "Gross Domestic Product (Billons of US Dollars)",
     y = "Survival Rate (Percent)",
-    title = "Economy Plays Minimal Role in COVID Survival Based on Countries GDP",
-    subtitle = "R² = 0.006",
+    title = "Economy Plays Minimal Role in COVID Survival \n Based on Countries GDP",
+    subtitle = "R² = 0.001",
     caption = "Data from kaggle.com/datasets/alejopaullier/-gdp-by-country-1999-2022 \n Zoomed to Show Details"
   )
 
@@ -226,11 +290,12 @@ global_covid_economic_transform |>
   ggplot() +
   geom_point(aes(x = gdp_per_cap, y = survival_rate * 100), color="purple4") +
   geom_point(aes(x = gdp_per_cap, y = gdp_per_cap_pred * 100), color="green", shape = 6) +
+  ylim(90, 100) +
   labs(
     x = "Gross Domestic Product per Capita (US Dollars)",
     y = "Survival Rate (Percent)",
-    title = "Economy Plays Minimal Role in COVID Survival Based on Countries GDP per Capita",
-    subtitle = "R² = 0.056",
+    title = "Economy Plays Minimal Role in COVID Survival \n Based on Countries GDP per Capita",
+    subtitle = "R² = 0.02",
     caption = "Data from: \n kaggle.com/datasets/alejopaullier/-gdp-by-country-1999-2022 \n kaggle.com/datasets/tanuprabhu/population-by-country-2020"
   )
 
@@ -238,7 +303,7 @@ global_covid_economic_transform |>
   ggplot() +
   geom_point(aes(x = average_big_mac_usd, y = survival_rate * 100, color = "Data") ) +
   geom_point(aes(x = average_big_mac_usd, y = big_mac_pred * 100, color = "Model"), shape = 6) +
-  # ylim(95, 100) +
+  ylim(90, 100) +
   scale_color_manual(
     name = "Legend",
     values = c("Data" = "purple4", "Model" = "green")
@@ -247,17 +312,32 @@ global_covid_economic_transform |>
   labs(
     x = "Big Mac Price (US Dollars)",
     y = "Survival Rate (Percent)",
-    title = "Economy Plays Minimal Role in COVID Survival Based on informal PPP Analysis",
-    subtitle = "R² = 0.014",
+    title = "Economy Plays Minimal Role in COVID Survival \n Based on informal PPP Analysis",
+    subtitle = "R² = 0.015",
     caption = "Data from kaggle.com/datasets/vittoriogiatti/bigmacprice \n Zoomed to Show Details"
   )
 
-  
-# + scale_color_colorblind()
 
 ```
 
-```{r model}
+# Conclusion  
+
+After an analysis of data to include graphs. It appears that the wealth of a country does not have a huge effect on its people's chance of surviving COVID at least by itself.  
+
+### Limitations of analysis
+
+* Biased data:  
+  - Opinions on COVID effected what was reported as COVID. Sometimes COVID related deaths were reported as other illness, and sometimes unrelated deaths were attributed to COVID because the individual had COVID.  
+  - Wealth metrics and population can be effect by the beliefs of the organizations taking them.  
+  - Not all countries have the resources to properly diagnose or report COVID  
+
+* This analysis does not account for:
+  - different version of COVID  
+  - different cultures belief that effect care and spread  
+  - effects of support of other countries, or NGOs  
+  - effects of genetics of groups of people  
+  - data from different resources may consider lands part of different countries  
 
 
+```{r end}
 ```
