@@ -15,7 +15,17 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This analysis is to see if a countries wealth effected the survival rate of its people. There are many proxies for a countries' wealth this study will compare the survival rating to a countries' "Gross Domestic Product", "Gross Domestic Product per Capita", and an informal Price Point Parity, the "Big Mac Index".
 
-The analysis fortunately shows that these three countries' wealth proxies play a minimal role on there people's chances of surviving COVID. 
+
+The analysis fortunately shows that these three countries' wealth proxies play a minimal role on there people's chances of surviving COVID.
+
+For GDP:  
+[GPD by Country 1999-2022](https://www.kaggle.com/datasets/alejopaullier/-gdp-by-country-1999-2022)
+
+For GDP per Capita the population:  
+[Population By Country 2020](https://www.kaggle.com/datasets/tanuprabhu/population-by-country-2020)
+
+For the price of a Big Mac:  
+[Big Mac Price by Country](https://www.kaggle.com/datasets/vittoriogiatti/bigmacprice?resource=download)
 
 ## Libraries
 
@@ -217,7 +227,7 @@ global_covid_economic <- big_mac_price_tidy |>
 ```
 # Transformation 
 
-Columns added are `death_rate`, `survival_rate`, `survival_scaled_mean`, `survival_zscore`, and `gdp_per_cap`. The Survival Mean and Z-score where not used. GDP was in billions of dollars so to get the GDP per capita in need to multiply GDP by 1 billion before dividing by the population.
+Columns added are `death_rate`, `survival_rate`, `survival_scaled_mean`, `survival_zscore`, and `gdp_per_cap`. The Survival Mean and Z-score where not used. GDP was in billions of dollars so to get the GDP per capita the GDP had to be multiplied by 1 billion before dividing by the population.
 
 
 ```{r transform, message=FALSE}
